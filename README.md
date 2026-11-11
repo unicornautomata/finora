@@ -2,7 +2,7 @@
 # finora
 Financial Management System  Clarity in every transaction.
 =======
-# Ledger (rewrite)
+# Finora
 
 One service core, an HTTP API on top of it, and a PyQt6 desktop app that is both a client
 and (optionally) the server host.
@@ -16,9 +16,9 @@ future web app ─HTTP─▶ (same API)
 
     pip install -r requirements.txt
 
-    python -m ledger.client --host     # desktop app that also hosts the server (multi-user)
-    python -m ledger.client            # desktop app that connects to a server elsewhere
-    python -m ledger.server --db ledger.db --host 0.0.0.0 --port 8000   # headless server
+    python -m finora.client --host     # desktop app that also hosts the server (multi-user)
+    python -m finora..client            # desktop app that connects to a server elsewhere
+    python -m finora.server --db ledger.db --host 0.0.0.0 --port 8000   # headless server
 
 First start creates `admin` with a random password (shown once). Set `LEDGER_ADMIN_PASSWORD`
 to choose it. Interactive API docs: `http://<server>:8000/docs`.
@@ -26,7 +26,7 @@ Allow a future web app's origin with `LEDGER_CORS_ORIGINS=https://app.example.co
 
 ## Import your old master data
 
-    python -m ledger.server.import_legacy old/accountingdb.db --db ledger.db
+    python -m finora.server.import_legacy old/accountingdb.db --db ledger.db
 
 ## Tests
 
@@ -35,11 +35,11 @@ Allow a future web app's origin with `LEDGER_CORS_ORIGINS=https://app.example.co
 
 ## Layout
 
-    ledger/server/migrations/   schema + integrity triggers (versioned)
-    ledger/server/services.py   posting, numbering, reversal, auth, master data, reports
-    ledger/server/definitions.py  screens/entities published at GET /meta (client and web render from it)
-    ledger/server/api.py        HTTP API        host.py  runs it inside the PyQt6 process
-    ledger/client/              theme, shell (sidebar/toolbar/tabs), document + master + report screens
+    finora/server/migrations/   schema + integrity triggers (versioned)
+    finora/server/services.py   posting, numbering, reversal, auth, master data, reports
+    finora/server/definitions.py  screens/entities published at GET /meta (client and web render from it)
+    finora/server/api.py        HTTP API        host.py  runs it inside the PyQt6 process
+    finora/client/              theme, shell (sidebar/toolbar/tabs), document + master + report screens
 
 ## Key rules
 - Money is integer cents, quantities integer thousandths; the API uses decimal strings.
