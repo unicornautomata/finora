@@ -2,15 +2,16 @@
 import os, sys, tempfile, time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["LEDGER_ADMIN_PASSWORD"] = "smoke-pass-1"
+os.environ["FINORA_ADMIN_PASSWORD"] = "smoke-pass-1"
 
-from PyQt6.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtWidgets import QApplication
 from PyQt6.QtTest import QTest
-from ledger.server.host import ServerThread
-from ledger.client import theme
-from ledger.client.api_client import ApiClient
-from ledger.client.shell import Shell
-from ledger.client.login import LoginDialog
+from finora.server.host import ServerThread
+from finora.client import design
+from finora.client.components import dialogs
+from finora.client.api_client import ApiClient
+from finora.client.shell import Shell
+from finora.client.login import LoginDialog
 
 out = sys.argv[1] if len(sys.argv) > 1 else tempfile.mkdtemp()
 srv = ServerThread(os.path.join(tempfile.mkdtemp(), "s.db"), port=8765); srv.start(); assert srv.wait_ready()
@@ -22,10 +23,10 @@ for g, d, t in (("1000", "Cash", "AST"), ("1200", "Receivables", "AST"), ("4000"
     cl.master_create("gl_accounts", dict(glcd=g, description=d, gltype=t))
 cl.master_create("companies", dict(cocd="1000", name="Acme Corp", currency="USD", coa="C1"))
 
-app = QApplication([]); app.setStyleSheet(theme.qss(theme.LIGHT))
+app = QApplication([]); design.apply_theme(app, "light")
 warnings = []
-QMessageBox.warning = staticmethod(lambda *a, **k: warnings.append(a[2]))
-QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes)
+dialogs.error = lambda parent, text, *a, **k: warnings.append(text)
+dialogs.confirm = lambda *a, **k: True
 
 def wait(cond, secs=6):
     end = time.time() + secs
@@ -50,6 +51,14 @@ assert scr.lines[1]["credit"] == "250.00", scr.lines[1]
 scr.lines[1].update(glcd="4000", description="Sales"); scr._render_lines(); scr._touch()
 print("totals:", scr.lbl_dr.text(), "|", scr.lbl_cr.text(), "|", scr.chip.text())
 scr._changed(); QTest.qWait(100); scr.grab().save(os.path.join(out, "1_draft_light.png"))
+
+# REGRESSION (audit 7.1): saving a GL account elsewhere must not empty an open journal's picker
+cl.master_create("gl_accounts", dict(glcd="5000", description="Rent expense", gltype="AST"))
+win.refs.invalidate("gl_accounts")
+assert win.refs.pairs("gl_accounts"), "picker emptied during refresh"           # old values keep serving
+assert wait(lambda: any(k == "5000" for k, _ in win.refs.pairs("gl_accounts"))), "new account never arrived"
+assert scr.tbl.item(0, scr.col_ix["glcd"]).text().startswith("1000"), "existing line lost its account name"
+print("stale-cache regression: ok (", len(win.refs.pairs("gl_accounts")), "accounts )")
 print("enabled before post:", [k for k, a in win.acts.items() if a.isEnabled()], "| dirty:", scr.dirty, "| editable:", scr.editable)
 win.acts["post"].trigger()
 assert wait(lambda: scr.status == "posted"), warnings
@@ -65,7 +74,7 @@ print("unbalanced blocked:", warnings[-1])
 # reverse the posted one via the toolbar path
 scr.act_open  # picker is modal; use API to load instead
 j = cl.journals(doctype="PJ", status="posted")[0]; scr._load(cl.journal(j["id"]))
-import ledger.client.screens as sc
+import finora.client.screens as sc
 sc.QInputDialog.getText = staticmethod(lambda *a, **k: ("2026-11-10", True))
 win.acts["reverse"].trigger(); assert wait(lambda: scr.journal and scr.journal.get("reverses_id")), warnings
 print("reversal:", scr.journal["doc_no"], scr.journal["status"])
@@ -88,4 +97,20 @@ win._toggle_theme(); win.open_screen("doc:PJ"); QTest.qWait(200)
 g = win.tabs.currentWidget(); g._load(cl.journal(cl.journals(doctype="PJ", status="posted")[0]["id"])); QTest.qWait(100)
 win.grab().save(os.path.join(out, "4_posted_light.png"))
 print("warnings during run:", warnings)
+
+# responsive behaviour: narrow window hides the sidebar, uses icon-only toolbar and reflows form columns
+from PyQt6.QtCore import Qt
+win.resize(1000, 700); QTest.qWait(250)
+assert not win.sidebar.isVisible(), "sidebar should collapse on narrow windows"
+assert win.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+cols_narrow = win.tabs.currentWidget().h["cocd"].widget.parentWidget().columns
+win.resize(1400, 860); QTest.qWait(250)
+assert win.sidebar.isVisible() and win.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+cols_wide = win.tabs.currentWidget().h["cocd"].widget.parentWidget().columns
+print("responsive: header columns", cols_wide, "(wide) ->", cols_narrow, "(narrow)")
+assert cols_wide == 3 and cols_narrow <= 3
+win.grab().save(os.path.join(out, "6_wide.png"))
+win.resize(920, 700); QTest.qWait(250); win.grab().save(os.path.join(out, "7_narrow.png"))
+win.open_screen("report:trial_balance"); QTest.qWait(500); win.resize(1360, 860); QTest.qWait(200)
+win.grab().save(os.path.join(out, "8_report.png"))
 srv.stop(); print("UI SMOKE TEST PASSED")

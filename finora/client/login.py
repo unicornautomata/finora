@@ -1,7 +1,12 @@
 from __future__ import annotations
 from PyQt6.QtCore import QSettings
-from PyQt6.QtWidgets import (QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSpinBox,
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (QCheckBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
                              QVBoxLayout, QFileDialog)
+
+from . import design
+from .components import Button
+from .design.brand import BrandHeader, app_icon
 
 
 class LoginDialog(QDialog):
@@ -9,15 +14,16 @@ class LoginDialog(QDialog):
 
     def __init__(self, host_default=False, username="", password="", parent=None):
         super().__init__(parent)
-        self.s = QSettings("Finora", "Finora")
-        self.setWindowTitle("Sign in to Finora"); self.setMinimumWidth(420)
+        self.s = QSettings("FINORA", "FINORA")
+        self.setWindowTitle(f"Sign in to {design.PRODUCT_NAME}"); self.setWindowIcon(app_icon()); self.setMinimumWidth(440)
         lay = QVBoxLayout(self); lay.setSpacing(12)
-        t = QLabel("Finora"); t.setObjectName("title"); lay.addWidget(t)
+        lay.addWidget(BrandHeader(size=48))
+        tag = QLabel(design.TAGLINE); tag.setObjectName("h3"); lay.addWidget(tag)
         form = QFormLayout()
         self.host_cb = QCheckBox("Host the server on this computer")
         self.host_cb.setChecked(host_default or self.s.value("host", False, bool))
         self.url = QLineEdit(self.s.value("url", "http://127.0.0.1:8000"))
-        self.db = QLineEdit(self.s.value("db", "ledger.db")); browse = QPushButton("…"); browse.setFixedWidth(34)
+        self.db = QLineEdit(self.s.value("db", "finora.db")); browse = Button("…", "secondary", size="sm"); browse.setFixedWidth(38)
         browse.clicked.connect(self._browse)
         dbrow = QHBoxLayout(); dbrow.addWidget(self.db, 1); dbrow.addWidget(browse)
         self.port = QSpinBox(); self.port.setRange(1024, 65535); self.port.setValue(int(self.s.value("port", 8000)))
@@ -34,10 +40,10 @@ class LoginDialog(QDialog):
         self.dbrow = dbrow
         self.form = form
         lay.addLayout(form)
-        self.err = QLabel(""); self.err.setStyleSheet("color:#d64545"); self.err.setWordWrap(True); lay.addWidget(self.err)
+        self.err = QLabel(""); self.err.setObjectName("errorText"); self.err.setWordWrap(True); lay.addWidget(self.err)
         row = QHBoxLayout(); row.addStretch(1)
-        cancel = QPushButton("Cancel"); cancel.clicked.connect(self.reject)
-        ok = QPushButton("Sign in"); ok.setObjectName("primary"); ok.setDefault(True); ok.clicked.connect(self._ok)
+        cancel = Button("Cancel"); cancel.clicked.connect(self.reject)
+        ok = Button("Sign in", "primary"); ok.setDefault(True); ok.clicked.connect(self._ok)
         row.addWidget(cancel); row.addWidget(ok); lay.addLayout(row)
         self.host_cb.toggled.connect(self._toggle); self._toggle(self.host_cb.isChecked())
         (self.pw if self.user.text() else self.user).setFocus()

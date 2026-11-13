@@ -1,8 +1,8 @@
 import sqlite3, threading
 import pytest
 from fastapi.testclient import TestClient
-from ledger.server import services as S
-from ledger.server.api import build_app
+from finora.server import services as S
+from finora.server.api import build_app
 from conftest import entry
 
 

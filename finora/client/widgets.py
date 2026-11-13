@@ -2,7 +2,7 @@
 from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
-from PyQt6.QtCore import QDate, QRegularExpression, Qt
+from PyQt6.QtCore import QDate, QObject, QRegularExpression, Qt, pyqtSignal
 from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QCompleter, QDateEdit, QLineEdit, QStyledItemDelegate)
 
@@ -11,28 +11,40 @@ from .tasks import run_async
 SEP = " – "
 
 
-class RefCache:
-    """Lookup lists (GL accounts, companies, ...) fetched once and shared by all screens."""
+class RefCache(QObject):
+    """Lookup lists (GL accounts, companies, ...) fetched once and shared by all screens.
+
+    invalidate() never empties a list: the old values keep serving screens while fresh ones load,
+    then `changed` fires so open screens can refresh their pickers (fixes the empty-picker bug)."""
+    changed = pyqtSignal(list)
 
     def __init__(self, client, entities: dict):
+        super().__init__()
         self.client, self.entities, self.data = client, entities, {}
+        self.stale: set[str] = set()
 
-    def invalidate(self, *names):
-        for n in (names or list(self.data)):
-            self.data.pop(n, None)
+    def invalidate(self, *names, reload: bool = True):
+        names = [n for n in (names or list(self.data)) if n in self.entities and n in self.data]
+        self.stale.update(names)
+        if reload and names:
+            self._refetch(names)
 
-    def load(self, names, done, fail=None):
-        missing = [n for n in set(names) if n not in self.data and n in self.entities]
-        if not missing:
-            return done()
-
+    def _refetch(self, names, done=None, fail=None):
         def fetch():
-            return {n: self.client.master_list(n, limit=5000) for n in missing}
+            return {n: self.client.master_list(n, limit=5000) for n in names}
 
         def ok(res):
             self.data.update(res)
-            done()
+            self.stale.difference_update(res)
+            self.changed.emit(list(res))
+            if done: done()
         run_async(fetch, ok, fail)
+
+    def load(self, names, done, fail=None):
+        missing = [n for n in set(names) if n in self.entities and (n not in self.data or n in self.stale)]
+        if not missing:
+            return done()
+        self._refetch(missing, done, fail)
 
     def pairs(self, name):
         e = self.entities.get(name)
@@ -86,6 +98,20 @@ class Editor:
         self.widget = w
         if field.get("readonly"):
             self.set_readonly(True)
+
+    def reload_options(self, refs: "RefCache"):
+        """Repopulate a ref combo from the cache, keeping what the user has selected or typed."""
+        if self.type != "ref":
+            return
+        w, current = self.widget, self.value()
+        w.blockSignals(True)
+        w.clear()
+        if not self.field.get("required"):
+            w.addItem("", None)
+        for key, label in refs.pairs(self.field["ref"]):
+            w.addItem(label, key)
+        w.blockSignals(False)
+        self.set_value(current)
 
     def value(self):
         w, t = self.widget, self.type

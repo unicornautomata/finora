@@ -36,10 +36,10 @@ class ReverseIn(BaseModel):
 
 
 def build_app(db: Database) -> FastAPI:
-    app = FastAPI(title="Ledger API", version="1.0")
+    app = FastAPI(title="FINORA API", version="1.0")
     app.state.db = db
 
-    origins = [o for o in os.environ.get("LEDGER_CORS_ORIGINS", "").split(",") if o]
+    origins = [o for o in os.environ.get("FINORA_CORS_ORIGINS", "").split(",") if o]
     if origins:
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
 

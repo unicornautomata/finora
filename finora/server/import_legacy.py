@@ -1,5 +1,5 @@
 """Copy master data from the old accountingdb.db into the new database.
-   python -m ledger.server.import_legacy old/accountingdb.db --db ledger.db"""
+   python -m finora.server.import_legacy old/accountingdb.db --db finora.db"""
 import argparse, sqlite3
 from .db import Database
 from .services import seed_defaults
@@ -46,6 +46,6 @@ def run(old_path: str, new_path: str) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("old")
-    ap.add_argument("--db", default="ledger.db")
+    ap.add_argument("--db", default="finora.db")
     a = ap.parse_args()
     print(run(a.old, a.db))
