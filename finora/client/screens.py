@@ -6,10 +6,13 @@ from decimal import Decimal
 from PyQt6.QtCore import QDate, Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QAbstractItemView, QDateEdit, QDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
-                             QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
+                             QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu,
                              QSplitter, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
                              QComboBox)
 
+from . import design
+from .components import (Button, Card, EmptyStateStack, ReportHeader, ResponsiveFormGrid, StatusChip,
+                         configure_table, dialogs, page_margins, scroll_page)
 from .tasks import run_async
 from .widgets import SEP, AmountDelegate, Editor, GLDelegate, RefCache, to_dec
 
@@ -17,11 +20,8 @@ R = Qt.ItemDataRole
 RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 
 
-def card(layout=None) -> QFrame:
-    f = QFrame(); f.setObjectName("card")
-    if layout is not None:
-        f.setLayout(layout)
-    return f
+def card(layout=None):
+    return Card.from_layout(layout) if layout is not None else Card()
 
 
 def fmt(v) -> str:
@@ -64,17 +64,15 @@ class JournalPicker(QDialog):
         row = QHBoxLayout()
         self.q = QLineEdit(); self.q.setPlaceholderText("Search number, reference or description")
         self.q.returnPressed.connect(self.search)
-        go = QPushButton("Search"); go.clicked.connect(self.search)
+        go = Button("Search", "primary"); go.clicked.connect(self.search)
         row.addWidget(self.q, 1); row.addWidget(go)
         lay.addLayout(row)
         cols = ["Number", "Date", "Reference", "Description", "Total", "Status"]
         self.t = QTableWidget(0, len(cols)); self.t.setHorizontalHeaderLabels(cols)
-        self.t.verticalHeader().setVisible(False); self.t.setAlternatingRowColors(True)
-        self.t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.t.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        configure_table(self.t, stretch_col=3)
         self.t.doubleClicked.connect(self.accept_row)
-        lay.addWidget(self.t, 1)
+        self.stack = EmptyStateStack(self.t, "No journals found", "Try a different search, or create a new journal.", "search")
+        lay.addWidget(self.stack, 1)
         self.status = QLabel(""); self.status.setObjectName("muted"); lay.addWidget(self.status)
         self.search()
 
@@ -85,6 +83,7 @@ class JournalPicker(QDialog):
 
     def _fill(self, rows):
         self.rows = rows
+        self.stack.show_rows(bool(rows))
         self.t.setRowCount(len(rows))
         for i, r in enumerate(rows):
             vals = [r["doc_no"] or f"Draft #{r['id']}", r["posting_date"], r["reference"] or "",
@@ -117,8 +116,8 @@ class DocumentScreen(Screen):
         self.dirty = self.busy = self._loading = False
         self.cols = self.doc["line_columns"]
         self.col_ix = {c["name"]: i for i, c in enumerate(self.cols)}
-        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(16, 14, 16, 14)
-        self._lay.addWidget(QLabel("Loading…"))
+        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(0, 0, 0, 0)
+        self._lay.addWidget(QLabel("Loading…"), 0, Qt.AlignmentFlag.AlignCenter)
         refs.load(["companies", "gl_accounts"], self._build, self.error)
 
     # ---- construction
@@ -127,28 +126,23 @@ class DocumentScreen(Screen):
             w = self._lay.takeAt(0).widget()
             if w:
                 w.deleteLater()
-        lay = self._lay; lay.setSpacing(12)
+        content = QWidget(); lay = page_margins(QVBoxLayout(content))
+        self._lay.addWidget(scroll_page(content))
 
-        # header card (3 columns, like the mock-up)
+        # header card: 3 columns on wide windows, 2 or 1 as the window narrows
         self.h: dict[str, Editor] = {}
-        g = QGridLayout(); g.setHorizontalSpacing(14); g.setVerticalSpacing(10)
-        for r, row in enumerate(self.doc["header_layout"]):
-            for c, f in enumerate(row):
-                lab = QLabel(f["label"]); lab.setObjectName("muted")
+        hg = ResponsiveFormGrid()
+        for row in self.doc["header_layout"]:
+            for f in row:
                 ed = Editor(f, self.refs); self.h[f["name"]] = ed
-                g.addWidget(lab, r, c * 2); g.addWidget(ed.widget, r, c * 2 + 1)
+                hg.add_field(f["label"], ed.widget)
         df = self.doc["description_field"]
-        dl = QLabel(df["label"]); dl.setObjectName("muted")
         self.h["description"] = Editor(df, self.refs)
-        n = len(self.doc["header_layout"])
-        g.addWidget(dl, n, 0); g.addWidget(self.h["description"].widget, n, 1, 1, 5)
-        for c in (1, 3, 5):
-            g.setColumnStretch(c, 1)
-        top = QHBoxLayout()
-        self.badge = QLabel("New"); self.badge.setObjectName("badge")
-        top.addWidget(self.badge); top.addStretch(1)
-        hv = QVBoxLayout(); hv.addLayout(top); hv.addLayout(g)
-        lay.addWidget(card(hv))
+        hg.add_field(df["label"], self.h["description"].widget, full=True)
+        self.badge = StatusChip("New", "info")
+        top = QHBoxLayout(); top.addWidget(self.badge); top.addStretch(1)
+        hc = Card(); hc.body.addLayout(top); hc.body.addWidget(hg)
+        lay.addWidget(hc)
         for name, ed in self.h.items():
             w = ed.widget
             if hasattr(w, "textEdited"): w.textEdited.connect(self._touch)
@@ -158,13 +152,12 @@ class DocumentScreen(Screen):
         # line grid
         self.tbl = QTableWidget(0, len(self.cols) + 1)
         self.tbl.setHorizontalHeaderLabels([c["label"] for c in self.cols] + [""])
-        self.tbl.verticalHeader().setVisible(False); self.tbl.verticalHeader().setDefaultSectionSize(36)
-        self.tbl.setAlternatingRowColors(True); self.tbl.setMinimumHeight(190)
-        self.tbl.setShowGrid(False)
+        configure_table(self.tbl, stretch_col=self.col_ix["description"], select_rows=False, editable=True)
+        self.tbl.setMinimumHeight(200)
         hdr = self.tbl.horizontalHeader()
         for i, c in enumerate(self.cols):
-            hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive); self.tbl.setColumnWidth(i, c.get("width", 120))
-        hdr.setSectionResizeMode(self.col_ix["description"], QHeaderView.ResizeMode.Stretch)
+            if i != self.col_ix["description"]:
+                hdr.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive); self.tbl.setColumnWidth(i, c.get("width", 120))
         hdr.setSectionResizeMode(len(self.cols), QHeaderView.ResizeMode.Fixed); self.tbl.setColumnWidth(len(self.cols), 44)
         self.tbl.setItemDelegateForColumn(self.col_ix["glcd"], GLDelegate(self.refs, self.tbl))
         for k in ("debit", "credit"):
@@ -172,38 +165,42 @@ class DocumentScreen(Screen):
         self.tbl.itemChanged.connect(self._on_item)
         self.tbl.currentCellChanged.connect(lambda *_: self._refresh_detail())
 
-        foot = QHBoxLayout()
-        self.btn_add = QPushButton("+ Add line"); self.btn_add.clicked.connect(lambda: self._add_line())
+        foot = QHBoxLayout(); foot.setSpacing(design.SPACE.lg)
+        self.btn_add = Button("Add line", "secondary", "plus", size="sm"); self.btn_add.clicked.connect(lambda: self._add_line())
         self.lbl_dr, self.lbl_cr, self.lbl_diff = QLabel(), QLabel(), QLabel()
-        self.chip = QLabel(); self.chip.setObjectName("badge")
+        self.chip = StatusChip("Empty", "neutral")
         foot.addWidget(self.btn_add); foot.addStretch(1)
         for w in (self.lbl_dr, self.lbl_cr, self.lbl_diff, self.chip):
-            foot.addWidget(w); foot.addSpacing(16)
-        gv = QVBoxLayout(); gv.addWidget(self.tbl, 1); gv.addLayout(foot)
-        lay.addWidget(card(gv), 1)
+            foot.addWidget(w)
+        lc = Card(); lc.body.addWidget(self.tbl, 1); lc.body.addLayout(foot)
+        lay.addWidget(lc, 1)
 
         # line item details
         self.d: dict[str, Editor] = {}
-        dg = QGridLayout(); dg.setHorizontalSpacing(14); dg.setVerticalSpacing(10)
-        for r, row in enumerate(self.doc["detail_layout"]):
-            for c, f in enumerate(row):
-                lab = QLabel(f["label"]); lab.setObjectName("muted")
+        dg = ResponsiveFormGrid()
+        for row in self.doc["detail_layout"]:
+            for f in row:
                 ed = Editor(f, self.refs); self.d[f["name"]] = ed
-                dg.addWidget(lab, r, c * 2); dg.addWidget(ed.widget, r, c * 2 + 1)
+                dg.add_field(f["label"], ed.widget)
                 if not f.get("readonly") and hasattr(ed.widget, "textEdited"):
                     ed.widget.textEdited.connect(lambda _=None, n=f["name"]: self._on_detail(n))
         pf = self.doc["detail_description"]
-        pl = QLabel(pf["label"]); pl.setObjectName("muted")
         self.d[pf["name"]] = Editor(pf, self.refs)
         self.d[pf["name"]].widget.textEdited.connect(lambda _=None: self._on_detail(pf["name"]))
-        nr = len(self.doc["detail_layout"])
-        dg.addWidget(pl, nr, 0); dg.addWidget(self.d[pf["name"]].widget, nr, 1, 1, 5)
-        for c in (1, 3, 5):
-            dg.setColumnStretch(c, 1)
-        grp = QVBoxLayout(); t = QLabel("Line Item Details"); t.setStyleSheet("font-weight:600;")
-        grp.addWidget(t); grp.addLayout(dg)
-        lay.addWidget(card(grp))
+        dg.add_field(pf["label"], self.d[pf["name"]].widget, full=True)
+        dc = Card("Line Item Details"); dc.body.addWidget(dg)
+        lay.addWidget(dc)
+        self.refs.changed.connect(self._refs_changed)
         self.new_document()
+
+    def _refs_changed(self, names):
+        if not hasattr(self, "h"):
+            return
+        for ed in [*self.h.values(), *self.d.values()]:
+            if ed.type == "ref" and ed.field["ref"] in names:
+                ed.reload_options(self.refs)
+        if "gl_accounts" in names:
+            self._render_lines()
 
     # ---- state helpers
     @property
@@ -249,8 +246,7 @@ class DocumentScreen(Screen):
                 "reversed": f"Reversed {self.journal['doc_no']}" if self.journal else ""}[st]
         if self.dirty and st in ("new", "draft"):
             text += "  •  unsaved"
-        self.badge.setText(text); self.badge.setProperty("state", st)
-        self.badge.style().unpolish(self.badge); self.badge.style().polish(self.badge)
+        self.badge.set_status(text, {"new": "info", "draft": "warning", "posted": "success", "reversed": "neutral"}[st])
 
     # ---- loading / blank
     def new_document(self, lines=None, header=None):
@@ -376,9 +372,8 @@ class DocumentScreen(Screen):
         self.lbl_dr.setText(f"Debit  {td:,.2f}"); self.lbl_cr.setText(f"Credit  {tc:,.2f}")
         self.lbl_diff.setText(f"Difference  {diff:,.2f}")
         ok = diff == 0 and td > 0 and n >= 2
-        self.chip.setText("Balanced" if ok else ("Out of balance" if td or tc else "Empty"))
-        self.chip.setStyleSheet("" if not td and not tc else
-                                f"background:{'#2f9e6f' if ok else '#d64545'}; color:#fff;")
+        self.chip.set_status("Balanced" if ok else ("Out of balance" if td or tc else "Empty"),
+                             "success" if ok else ("danger" if td or tc else "neutral"))
 
     # ---- line detail panel
     def _refresh_detail(self):
@@ -444,8 +439,8 @@ class DocumentScreen(Screen):
         td, tc = self._totals()
         if td != tc:
             return self.error(f"The journal is out of balance by {abs(td - tc):,.2f}. Debits must equal credits before posting.")
-        if QMessageBox.question(self, "Post journal", "Post this journal?\n\nPosted journals cannot be edited. "
-                                "To correct one you reverse it.") != QMessageBox.StandardButton.Yes:
+        if not dialogs.confirm(self, "Post this journal?", "Post journal", confirm_text="Post journal",
+                               detail="Posted journals cannot be edited. To correct one, reverse it."):
             return
         def post():
             j = self.journal
@@ -469,7 +464,7 @@ class DocumentScreen(Screen):
 
     def act_delete(self):
         if self.status != "draft": return
-        if QMessageBox.question(self, "Delete draft", "Delete this draft journal?") != QMessageBox.StandardButton.Yes: return
+        if not dialogs.confirm(self, "Delete this draft journal?", "Delete draft", confirm_text="Delete", danger=True): return
         j = self.journal
         self._call(lambda: self.client.journal_delete(j["id"], j["version"]),
                    lambda _: (self.new_document(), self.info("Draft deleted")))
@@ -492,7 +487,8 @@ class DocumentScreen(Screen):
 
     def _confirm_discard(self):
         if not self.dirty: return True
-        return QMessageBox.question(self, "Unsaved changes", "Discard unsaved changes?") == QMessageBox.StandardButton.Yes
+        return dialogs.confirm(self, "Discard unsaved changes?", "Unsaved changes", confirm_text="Discard changes",
+                               cancel_text="Keep editing", danger=True)
 
 
 # ====================================================================== master data
@@ -503,8 +499,8 @@ class MasterScreen(Screen):
         self.e = meta["entities"][entity]
         self.can_write = "write" in meta["permissions"]
         self.key, self.rows, self.busy = None, [], False
-        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(16, 14, 16, 14)
-        self._lay.addWidget(QLabel("Loading…"))
+        self._lay = page_margins(QVBoxLayout(self))
+        self._lay.addWidget(QLabel("Loading…"), 0, Qt.AlignmentFlag.AlignCenter)
         refs.load([f["ref"] for f in self.e["fields"] if f["type"] == "ref"], self._build, self.error)
 
     def _build(self):
@@ -518,27 +514,37 @@ class MasterScreen(Screen):
         self.search.returnPressed.connect(self.act_refresh)
         left.addWidget(self.search)
         self.t = QTableWidget(0, len(self.shown)); self.t.setHorizontalHeaderLabels([f["label"] for f in self.shown])
-        self.t.verticalHeader().setVisible(False); self.t.setAlternatingRowColors(True); self.t.setShowGrid(False)
-        self.t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        configure_table(self.t)
         self.t.horizontalHeader().setStretchLastSection(True)
         self.t.itemSelectionChanged.connect(self._select)
-        left.addWidget(self.t, 1)
+        self.stack = EmptyStateStack(self.t, f"No {self.e['plural'].lower()} yet",
+                                     f"Use New to add the first {self.e['label'].lower()}.", "inbox")
+        left.addWidget(self.stack, 1)
         lw = QWidget(); lw.setLayout(left)
 
         self.form: dict[str, Editor] = {}
-        fl = QFormLayout(); fl.setVerticalSpacing(12); fl.setHorizontalSpacing(16)
+        fl = QFormLayout(); fl.setVerticalSpacing(design.SPACE.md); fl.setHorizontalSpacing(design.SPACE.lg)
+        fl.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        fl.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         for f in fields:
             ed = Editor(f, self.refs); self.form[f["name"]] = ed
-            lab = QLabel(f["label"] + (" *" if f["required"] else "")); lab.setObjectName("muted")
+            lab = QLabel(f["label"] + (" *" if f["required"] else "")); lab.setObjectName("fieldLabel")
             fl.addRow(lab, ed.widget)
         self.hint = QLabel(""); self.hint.setObjectName("muted"); self.hint.setWordWrap(True)
-        title = QLabel(self.e["label"]); title.setObjectName("title")
+        title = QLabel(self.e["label"]); title.setObjectName("h2")
         rv = QVBoxLayout(); rv.addWidget(title); rv.addLayout(fl); rv.addWidget(self.hint); rv.addStretch(1)
-        right = card(rv)
-        sp = QSplitter(); sp.addWidget(lw); sp.addWidget(right); sp.setStretchFactor(0, 3); sp.setStretchFactor(1, 2)
+        right = card(rv); right.setMinimumWidth(300)
+        sp = QSplitter(); sp.setChildrenCollapsible(False); sp.addWidget(lw); sp.addWidget(scroll_page(right))
+        sp.setStretchFactor(0, 3); sp.setStretchFactor(1, 2)
         self._lay.addWidget(sp)
+        self.refs.changed.connect(self._refs_changed)
         self.act_new(); self.act_refresh()
+
+    def _refs_changed(self, names):
+        if hasattr(self, "form"):
+            for ed in self.form.values():
+                if ed.type == "ref" and ed.field["ref"] in names:
+                    ed.reload_options(self.refs)
 
     def heading(self):
         return f"{self.e['plural']}"
@@ -550,6 +556,10 @@ class MasterScreen(Screen):
                     refresh=True)
 
     def _fill_table(self):
+        searching = bool(self.search.text().strip())
+        self.stack.show_rows(bool(self.rows),
+                             "No matches" if searching else f"No {self.e['plural'].lower()} yet",
+                             "Try a different search term." if searching else f"Use New to add the first {self.e['label'].lower()}.")
         self.t.blockSignals(True)
         self.t.setRowCount(len(self.rows))
         for i, r in enumerate(self.rows):
@@ -606,7 +616,7 @@ class MasterScreen(Screen):
 
     def act_delete(self):
         if self.key is None: return
-        if QMessageBox.question(self, "Delete", f"Delete {self.e['label'].lower()} '{self.key}'?") != QMessageBox.StandardButton.Yes: return
+        if not dialogs.confirm(self, f"Delete {self.e['label'].lower()} '{self.key}'?", "Delete", confirm_text="Delete", danger=True): return
         key = self.key
         self._call(lambda: self.client.master_delete(self.entity, key),
                    lambda _: (self.info("Deleted"), self.master_changed.emit(self.entity), self.act_new(), self.act_refresh()))
@@ -617,8 +627,8 @@ class TrialBalanceScreen(Screen):
     def __init__(self, client, meta, refs):
         super().__init__()
         self.client, self.refs, self.busy = client, refs, False
-        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(16, 14, 16, 14)
-        self._lay.addWidget(QLabel("Loading…"))
+        self._lay = page_margins(QVBoxLayout(self))
+        self._lay.addWidget(QLabel("Loading…"), 0, Qt.AlignmentFlag.AlignCenter)
         refs.load(["companies"], self._build, self.error)
 
     def _build(self):
@@ -628,18 +638,21 @@ class TrialBalanceScreen(Screen):
         bar = QHBoxLayout()
         self.co = Editor(dict(name="cocd", label="Company", type="ref", required=True, ref="companies"), self.refs)
         self.asof = Editor(dict(name="as_of", label="As of", type="date"), self.refs)
-        go = QPushButton("Run report"); go.setObjectName("primary"); go.clicked.connect(self.act_refresh)
+        go = Button("Run report", "primary", "bar-chart"); go.clicked.connect(self.act_refresh)
         for t, w in (("Company", self.co.widget), ("As of", self.asof.widget)):
-            l = QLabel(t); l.setObjectName("muted"); bar.addWidget(l); bar.addWidget(w, 1)
+            l = QLabel(t); l.setObjectName("fieldLabel"); bar.addWidget(l); bar.addWidget(w, 1)
         bar.addWidget(go)
+        self.report = ReportHeader("Trial Balance"); self._lay.addWidget(self.report)
+        self.report.set_report("Choose a company and date, then run the report", None)
         self._lay.addWidget(card(bar))
         cols = ["GL Account", "Description", "Debit", "Credit", "Balance"]
-        self.t = QTableWidget(0, 5); self.t.setHorizontalHeaderLabels(cols); self.t.setAlternatingRowColors(True)
-        self.t.verticalHeader().setVisible(False); self.t.setShowGrid(False)
-        self.t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.t.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._lay.addWidget(self.t, 1)
-        self.sum = QLabel(""); self.sum.setObjectName("badge"); self._lay.addWidget(self.sum, 0, Qt.AlignmentFlag.AlignRight)
+        self.t = QTableWidget(0, 5); self.t.setHorizontalHeaderLabels(cols)
+        configure_table(self.t, stretch_col=1)
+        self.stack = EmptyStateStack(self.t, "Run the report", "Choose a company and date, then press Run report.", "bar-chart")
+        self.stack.show_rows(False)
+        self._lay.addWidget(self.stack, 1)
+        self.sum = StatusChip("", "neutral"); self._lay.addWidget(self.sum, 0, Qt.AlignmentFlag.AlignRight)
+        self.refs.changed.connect(lambda names: self.co.reload_options(self.refs) if "companies" in names else None)
         if self.refs.data.get("companies") and len(self.refs.data["companies"]) == 1:
             self.co.set_value(self.refs.data["companies"][0]["cocd"]); self.act_refresh()
 
@@ -652,6 +665,7 @@ class TrialBalanceScreen(Screen):
         run_async(lambda: self.client.trial_balance(cocd, self.asof.value()), self._fill, self.error)
 
     def _fill(self, tb):
+        self.stack.show_rows(bool(tb["rows"]), "No posted journals", "Nothing has been posted for this company up to that date.")
         self.t.setRowCount(len(tb["rows"]))
         for i, r in enumerate(tb["rows"]):
             for c, v in enumerate([r["glcd"], r["description"] or "", f"{to_dec(r['debit']):,.2f}",
@@ -659,7 +673,8 @@ class TrialBalanceScreen(Screen):
                 it = QTableWidgetItem(v)
                 if c >= 2: it.setTextAlignment(RIGHT)
                 self.t.setItem(i, c, it)
+        label = dict(self.refs.pairs("companies")).get(tb["cocd"], tb["cocd"])
+        self.report.set_report(f"{label}  ·  As of {tb['as_of']}", (self.client.user or {}).get("username"))
         ok = tb["balanced"]
-        self.sum.setText(f"Total debit {to_dec(tb['total_debit']):,.2f}   Total credit {to_dec(tb['total_credit']):,.2f}   "
-                         + ("Balanced" if ok else "OUT OF BALANCE"))
-        self.sum.setStyleSheet(f"background:{'#2f9e6f' if ok else '#d64545'}; color:#fff;")
+        self.sum.set_status(f"Total debit {to_dec(tb['total_debit']):,.2f}   Total credit {to_dec(tb['total_credit']):,.2f}   "
+                            + ("Balanced" if ok else "OUT OF BALANCE"), "success" if ok else "danger")

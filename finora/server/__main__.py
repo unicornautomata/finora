@@ -1,11 +1,11 @@
-"""Headless server:  python -m ledger.server --db ledger.db --host 0.0.0.0 --port 8000"""
+"""Headless server:  python -m finora.server --db finora.db --host 0.0.0.0 --port 8000"""
 import argparse
 from .host import ServerThread
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="ledger.db")
+    ap.add_argument("--db", default="finora.db")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
     a = ap.parse_args()

@@ -14,6 +14,8 @@ MIGRATIONS = Path(__file__).parent / "migrations"
 
 class Database:
     def __init__(self, path: str | Path):
+        if sqlite3.sqlite_version_info < (3, 35, 0):
+            raise RuntimeError(f"FINORA needs SQLite 3.35 or newer (found {sqlite3.sqlite_version}). On Windows use Python 3.10 or newer.")
         self.path = str(path)
         self.migrate()
 

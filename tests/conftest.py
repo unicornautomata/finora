@@ -1,7 +1,7 @@
 import os, sys, pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from ledger.server.db import Database
-from ledger.server import services as S
+from finora.server.db import Database
+from finora.server import services as S
 
 
 @pytest.fixture
@@ -29,3 +29,16 @@ def entry(a="100.00", b="100.00", **kw):
              lines=[dict(glcd="1000", debit=a, credit="0"), dict(glcd="4000", debit="0", credit=b)])
     d.update(kw)
     return d
+
+
+# ---- Qt fixtures (offscreen so tests run on CI and Windows without a display)
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    from PyQt6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from finora.client import design
+    design.apply_theme(app, "light")
+    return app

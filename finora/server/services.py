@@ -105,7 +105,7 @@ def seed_defaults(db: Database) -> str | None:
         for t in DEFAULT_DOC_TYPES:
             c.execute("INSERT OR IGNORE INTO doc_types(doctype,description,prefix) VALUES (?,?,?)", t)
         if c.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-            created = os.environ.get("LEDGER_ADMIN_PASSWORD") or secrets.token_urlsafe(9)
+            created = os.environ.get("FINORA_ADMIN_PASSWORD") or secrets.token_urlsafe(9)
             c.execute("INSERT INTO users(username,full_name,pw_hash,role) VALUES ('admin','Administrator',?,'admin')",
                       (hash_password(created),))
             audit(c, "system", "bootstrap_admin")

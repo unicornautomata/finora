@@ -10,7 +10,7 @@ from .services import seed_defaults
 
 class ServerThread(threading.Thread):
     def __init__(self, db_path: str, host: str = "127.0.0.1", port: int = 8000):
-        super().__init__(daemon=True, name="ledger-server")
+        super().__init__(daemon=True, name="finora-server")
         self.db = Database(db_path)
         self.initial_admin_password = seed_defaults(self.db)
         self.host, self.port = host, port
