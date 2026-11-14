@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QPushButton
 from .. import design
 from ..design import icons
 
-KINDS = ("secondary", "primary", "danger", "ghost")
+KINDS = ("secondary", "primary", "danger", "ghost", "segment")
 
 
 class Button(QPushButton):
@@ -33,5 +33,6 @@ class Button(QPushButton):
         if kind not in KINDS:
             raise ValueError(f"unknown button kind: {kind}")
         self.setProperty("kind", kind)
+        self.setCheckable(kind == "segment")
         self.style().unpolish(self); self.style().polish(self)
         self._retint()

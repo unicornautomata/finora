@@ -81,3 +81,21 @@ This supersedes the earlier "Segoe UI default" wording. Inter is still **not bun
 - Do not change database schemas or remove existing functionality.
 - No mock data in accounting workflows.
 - Backend additions only if additive, read-only and approved first.
+
+## 6. Multi-company architecture decisions (ERP Phase 1, 2026-11-14)
+
+Context: the product owner adopted the "Master Development Prompt" turning FINORA into a hierarchical multi-company ERP, delivered in 10 ERP phases.
+These decisions bind ERP Phases 2 to 10.
+
+1. **The company key stays `cocd`.** No surrogate company id is introduced; all existing foreign keys continue to work.
+2. **Additive migrations only.** Existing tables are never dropped or rebuilt. Every upgrade of an existing database is backed up, applied atomically and verified (row counts, content hashes, per-company totals) before commit.
+3. **Ownership is effective-dated history.** Records are closed or voided (with a reason), never rewritten or deleted. Percentages are integer basis points.
+4. **Legal ownership and operational reporting are separate tables.** A company may be legally owned by one company and report to another.
+5. **Integrity lives in the database**: no cycles at any depth and any date, at most 100% equity and voting per company per date, owner and owned in the same corporate group.
+6. **Ownership stays inside one corporate group.** A company moves between groups only after its cross-group links are closed.
+7. **Access is explicit.** Group grants, company grants, optional inclusion of descendants, exclusions, expiry and revocation. Nothing is inherited implicitly and platform administrators have no silent bypass.
+8. **Company access is enforced on the server.** The resolution rules exist (Phase 1); wiring them into every endpoint is the first task of ERP Phase 2, before any new data module is built.
+9. **Known gaps are tracked as executable tests** (`tests/test_known_gaps.py`, strict xfail). A phase that fixes a gap must flip its test and update this file.
+10. **Existing companies join a default group** created by the migration; companies created through the old API join it automatically.
+11. **Existing users keep today's reach**: group-wide access mapped from their current role (admin to Group Administrator, accountant to Group Accountant, viewer to Auditor).
+12. **Phase naming.** "UI Phases 1 to 12" are the frontend design phases (UI Phase 3 sign-in is delivered). "ERP Phases 1 to 10" are the multi-company ERP programme (ERP Phase 1 is delivered). They are tracked separately in `docs/PHASES.md`.

@@ -33,7 +33,7 @@ class Screen(QWidget):
     """Base class. The shell shows the same fixed toolbar for every screen and only
     enables the buttons a screen supports, like the original CRUD button row."""
     state_changed = pyqtSignal()
-    message = pyqtSignal(str, bool)       # text, is_error
+    message = pyqtSignal(str, str)        # text, kind: success | info | warning | error
     master_changed = pyqtSignal(str)
 
     def actions(self) -> dict:
@@ -50,8 +50,9 @@ class Screen(QWidget):
         if fn:
             fn()
 
-    def error(self, msg): self.message.emit(msg, True)
-    def info(self, msg): self.message.emit(msg, False)
+    def error(self, msg): self.message.emit(msg, "error")
+    def info(self, msg): self.message.emit(msg, "success")      # an operation succeeded
+    def note(self, msg): self.message.emit(msg, "info")        # neutral information
 
 
 # ====================================================================== documents
@@ -427,7 +428,7 @@ class DocumentScreen(Screen):
             fn = lambda: self.client.journal_create(p)
 
         def ok(j):
-            self._load(j); self.info(f"Saved as draft #{j['id']}")
+            self._load(j); self.info(f"Transaction Number {j['id']} {self.doctype} was saved as a draft!")
             if then: then()
         self._call(fn, ok)
 
@@ -445,7 +446,7 @@ class DocumentScreen(Screen):
         def post():
             j = self.journal
             self._call(lambda: self.client.journal_post(j["id"], j["version"]),
-                       lambda r: (self._load(r), self.info(f"Posted as {r['doc_no']}")))
+                       lambda r: (self._load(r), self.info(f"Transaction Number {r['doc_no']} {self.doctype} was posted!")))
         if self.dirty or not self.journal: self._save(then=post)
         else: post()
 
@@ -467,23 +468,23 @@ class DocumentScreen(Screen):
         if not dialogs.confirm(self, "Delete this draft journal?", "Delete draft", confirm_text="Delete", danger=True): return
         j = self.journal
         self._call(lambda: self.client.journal_delete(j["id"], j["version"]),
-                   lambda _: (self.new_document(), self.info("Draft deleted")))
+                   lambda _: (self.new_document(), self.info(f"Draft transaction {j['id']} {self.doctype} was deleted!")))
 
     def act_reverse(self):
         if self.status != "posted": return
         text, ok = QInputDialog.getText(self, "Reverse journal", "Posting date for the reversal (YYYY-MM-DD):",
                                         text=date.today().isoformat())
         if not ok: return
-        jid = self.journal["id"]
+        jid, orig_no = self.journal["id"], self.journal["doc_no"]
         self._call(lambda: self.client.journal_reverse(jid, text.strip()),
-                   lambda r: (self._load(r), self.info(f"Reversal {r['doc_no']} posted")))
+                   lambda r: (self._load(r), self.info(f"Transaction Number {r['doc_no']} {self.doctype} was posted as a reversal of {orig_no}!")))
 
     def act_copy(self):
         if not self._confirm_discard(): return
         lines = [dict(l) for l in self.lines]
         h = {k: self.h[k].value() for k in ("cocd", "reference", "department", "description")}
         self.new_document(lines=lines, header=h); self.dirty = True; self._changed()
-        self.info("Copied into a new draft")
+        self.note("Copied into a new draft. Review it, then save.")
 
     def _confirm_discard(self):
         if not self.dirty: return True
@@ -604,13 +605,14 @@ class MasterScreen(Screen):
             if f["type"] == "password" and not v: continue
             data[f["name"]] = v
         key, pk = self.key, self.e["pk"]
+        verb = "created" if key is None else "updated"
         if key is None:
             fn = lambda: self.client.master_create(self.entity, data)
         else:
             data.pop(pk, None); fn = lambda: self.client.master_update(self.entity, key, data)
 
         def ok(saved):
-            self.info(f"{self.e['label']} saved"); self.master_changed.emit(self.entity)
+            self.info(f"{self.e['label']} '{saved[pk]}' was {verb}!"); self.master_changed.emit(self.entity)
             self.key = saved[pk]; self.act_refresh()
         self._call(fn, ok)
 
@@ -619,7 +621,7 @@ class MasterScreen(Screen):
         if not dialogs.confirm(self, f"Delete {self.e['label'].lower()} '{self.key}'?", "Delete", confirm_text="Delete", danger=True): return
         key = self.key
         self._call(lambda: self.client.master_delete(self.entity, key),
-                   lambda _: (self.info("Deleted"), self.master_changed.emit(self.entity), self.act_new(), self.act_refresh()))
+                   lambda _: (self.info(f"{self.e['label']} '{key}' was deleted!"), self.master_changed.emit(self.entity), self.act_new(), self.act_refresh()))
 
 
 # ====================================================================== reports

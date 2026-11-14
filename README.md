@@ -28,10 +28,37 @@ Allow a future web app's origin with `FINORA_CORS_ORIGINS=https://app.example.co
 
 ## Tests
 
+Recorded results for the current delivery: `docs/TEST_RESULTS_ERP_PHASE1.txt`.
+
     pytest tests -q
     QT_QPA_PLATFORM=offscreen python tests/smoke_ui.py   # drives the real UI against a live server
 
+## Install
+
+Requires Python 3.10 or newer (Windows 10/11 is the first release target; older Python ships an SQLite too old for the server).
+
+    pip install -r requirements.txt
+    python -m finora.client --host        # desktop app that also hosts the server
+
+## Upgrading an existing installation (multi-company foundation, schema version 2)
+
+Nothing is deleted or renumbered: existing companies join a default corporate group, existing users keep their reach, journals and balances are untouched.
+
+1. Close FINORA on every computer that uses the database. Copy the `.db` file somewhere safe as an extra precaution.
+2. Preview: `python -m finora.server.migrate upgrade --db finora.db --dry-run`
+3. Start the new version as usual (or run `python -m finora.server.migrate upgrade --db finora.db`). It first writes a verified backup next to the database
+   (`finora.db.bak-v1-<time>`), then upgrades in a single transaction and compares every existing table and every company's debit/credit totals
+   before committing. If anything differs, the upgrade is rolled back and your data is unchanged.
+4. Verify: `python -m finora.server.migrate check --db finora.db` and `python -m finora.server.migrate status --db finora.db`.
+5. To go back: stop FINORA, then `python -m finora.server.migrate restore --db finora.db --backup finora.db.bak-v1-<time>`.
+   The post-upgrade file is kept as `finora.db.before-restore-<time>`.
+
+New code must use named columns in `INSERT` statements (for example `INSERT INTO companies(cocd, name, ...)`); positional inserts break when tables gain columns.
+
 ## Documentation
+
+- `docs/architecture/ERP_PHASE1_ASSESSMENT.md`: architecture assessment, database design, roadmap, known limitations
+- `docs/IMPLEMENTATION_STATUS.md`: honest status of every module
 
 - `docs/DECISIONS.md`: binding product and engineering decisions (read first)
 - `docs/DESIGN_SYSTEM.md`: tokens, components, brand, rules for building screens

@@ -12,6 +12,9 @@ def build(p) -> str:
     chips = "\n".join(f"""
 QLabel#chip[kind="{k}"] {{ background: {getattr(p, k + '_soft')}; color: {getattr(p, k + '_ink')}; }}
 QFrame#kpi[kind="{k}"] {{ border-left: 4px solid {getattr(p, k)}; }}""" for k in STATUS)
+    banners = "\n".join(f"""
+QFrame#banner[kind="{k}"] {{ background: {getattr(p, k + '_soft')}; border: 1px solid {getattr(p, k)}; }}
+QFrame#banner[kind="{k}"] QLabel#bannerText {{ color: {getattr(p, k + '_ink')}; }}""" for k in STATUS)
     return f"""
 /* ===== base & typography ===== */
 * {{ font-family: {typography.css_stack()}; font-size: {TYPE.body}px; }}
@@ -43,6 +46,15 @@ QLabel#reportTitle {{ font-size: {TYPE.h2}px; font-weight: 700; }}
 QLabel#chip {{ padding: 3px 10px; border-radius: {RADIUS.pill}px; font-weight: 600; font-size: {TYPE.small}px; }}
 QLabel#chip[kind="neutral"] {{ background: {p.readonly}; color: {p.text2_strong}; }}
 {chips}
+
+/* ===== banners (inline messages) ===== */
+QFrame#banner {{ border-radius: {RADIUS.sm}px; }}
+QLabel#bannerText {{ font-size: {TYPE.small}px; }}
+{banners}
+QLabel#warnText {{ color: {p.warning_ink}; font-size: {TYPE.small}px; font-weight: 600; }}
+QLabel#brandHero {{ color: #FFFFFF; font-size: 20px; font-weight: 600; }}
+QFrame#brandPanel {{ background: {p.sidebar_bg}; border: none; }}
+QFrame#brandPanel QLabel {{ color: {p.sidebar_text}; }}
 
 /* ===== cards & panels ===== */
 QFrame#card, QGroupBox {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: {RADIUS.md}px; }}
@@ -97,6 +109,8 @@ QPushButton[kind="danger"] {{ color: {p.danger_ink}; border-color: {p.danger}; b
 QPushButton[kind="danger"]:hover {{ background: {p.danger_soft}; border-color: {p.danger}; }}
 QPushButton[kind="ghost"] {{ border: 1px solid transparent; background: transparent; color: {p.link}; }}
 QPushButton[kind="ghost"]:hover {{ background: {p.hover}; border-color: transparent; }}
+QPushButton[kind="segment"] {{ background: {p.surface}; border: 1px solid {p.border_strong}; font-weight: 500; }}
+QPushButton[kind="segment"]:checked {{ background: {p.selection}; border: 1px solid {p.primary}; font-weight: 600; }}
 QPushButton[size="sm"] {{ padding: 3px 10px; font-size: {TYPE.small}px; }}
 QToolButton#rowmenu {{ padding: 0px 6px; border: none; background: transparent; font-weight: 700; }}
 QToolButton#rowmenu::menu-indicator {{ image: none; }}
@@ -132,6 +146,13 @@ QToolBar QToolButton:disabled {{ background: transparent; border-color: transpar
 QToolBar QToolButton:hover {{ border-color: {p.border}; background: {p.hover}; }}
 QToolBar::separator {{ background: {p.border}; width: 1px; margin: 4px 6px; }}
 QStatusBar {{ background: {p.surface}; color: {p.text2_strong}; border-top: 1px solid {p.border}; }}
+QStatusBar::item {{ border: none; }}
+QLabel#statusText {{ color: {p.text2_strong}; font-size: {TYPE.small}px; }}
+QLabel#statusText[kind="success"] {{ color: {p.success_ink}; font-weight: 600; }}
+QLabel#statusText[kind="info"] {{ color: {p.info_ink}; font-weight: 600; }}
+QLabel#statusText[kind="warning"] {{ color: {p.warning_ink}; font-weight: 600; }}
+QLabel#statusText[kind="danger"] {{ color: {p.danger_ink}; font-weight: 600; }}
+QLabel#statusClock {{ color: {p.text2_strong}; font-size: {TYPE.small}px; padding: 0 12px; }}
 
 /* ===== dialogs & menus ===== */
 QMessageBox, QInputDialog {{ background: {p.surface}; }}

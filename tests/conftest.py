@@ -13,7 +13,7 @@ def db(tmp_path):
         c.execute("INSERT INTO gl_types VALUES ('AST','Assets','C1','D'),('REV','Revenue','C1','C')")
         c.executemany("INSERT INTO gl_accounts(glcd,description,gltype) VALUES (?,?,?)",
                       [("1000", "Cash", "AST"), ("4000", "Sales", "REV"), ("1200", "Receivables", "AST")])
-        c.execute("INSERT INTO companies VALUES ('1000','Acme','USD','C1',NULL)")
+        c.execute("INSERT INTO companies(cocd,name,currency,coa,tax_id) VALUES ('1000','Acme','USD','C1',NULL)")
     return d
 
 
@@ -42,3 +42,47 @@ def qapp():
     from finora.client import design
     design.apply_theme(app, "light")
     return app
+
+
+# ---- helpers shared by the UI tests
+import socket
+import time
+
+
+def free_port() -> int:
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def wait_until(cond, secs: float = 8.0) -> bool:
+    from PyQt6.QtTest import QTest
+    end = time.time() + secs
+    while time.time() < end:
+        QTest.qWait(25)
+        if cond():
+            return True
+    return False
+
+
+@pytest.fixture(autouse=True)
+def isolated_qsettings(tmp_path, monkeypatch):
+    """Never touch real user settings (the registry on Windows) from tests."""
+    from PyQt6.QtCore import QSettings
+    from finora.client import settings
+    path = str(tmp_path / "settings.ini")
+    monkeypatch.setattr(settings, "app_settings", lambda: QSettings(path, QSettings.Format.IniFormat))
+
+
+@pytest.fixture
+def live_server(tmp_path, monkeypatch):
+    """A real FINORA server on a free port with a known admin password."""
+    monkeypatch.setenv("FINORA_ADMIN_PASSWORD", "test-admin-pass")
+    from finora.server.host import ServerThread
+    port = free_port()
+    srv = ServerThread(str(tmp_path / "live.db"), port=port)
+    srv.start()
+    assert srv.wait_ready()
+    srv.url = f"http://127.0.0.1:{port}"
+    yield srv
+    srv.stop()

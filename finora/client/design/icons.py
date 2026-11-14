@@ -24,6 +24,8 @@ PATHS = {
     "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.3"/>',
     "help-circle": '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7"/><path d="M12 17v.3"/>',
     "alert-circle": '<circle cx="12" cy="12" r="9"/><path d="M12 7.5v5"/><path d="M12 16v.3"/>',
+    "eye": '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    "eye-off": '<path d="M3 3l18 18"/><path d="M10.6 5.2A10.7 10.7 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 4.2-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "search": '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
     "inbox": '<path d="M3 13l3-8h12l3 8"/><path d="M3 13v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6h-5l-1 3h-6l-1-3z"/>',

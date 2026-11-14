@@ -1,0 +1,41 @@
+FINORA ERP Phase 1 - recorded test results
+Date: 2026-11-14T03:30:06Z
+Python: Python 3.12.3 | SQLite: 3.45.1 | PyQt6: 6.12.0
+
+$ pytest tests -q -rxX
+........................................................................ [ 62%]
+.....xxx...................................                              [100%]
+=============================== warnings summary ===============================
+=========================== short test summary info ============================
+XFAIL tests/test_known_gaps.py::test_company_cannot_post_to_an_account_of_another_charts - F1: a journal can use an account from another company's chart. Fix: ERP Phase 3 (company-specific CoA).
+XFAIL tests/test_known_gaps.py::test_user_without_access_cannot_read_another_companys_journal - F2: HTTP endpoints do not check company access. Fix: ERP Phase 2 (company context + scoping).
+XFAIL tests/test_known_gaps.py::test_journal_list_only_shows_companies_the_user_may_access - F2: company-filtered lists are not enforced server-side. Fix: ERP Phase 2.
+112 passed, 3 xfailed, 1 warning in 18.52s
+
+$ QT_QPA_PLATFORM=offscreen python tests/smoke_ui.py
+heading: Create Purchases Journal | enabled: ['new', 'open']
+totals: Debit  250.00 | Credit  250.00 | Balanced
+stale-cache regression: ok ( 4 accounts )
+enabled before post: ['new', 'open', 'save', 'post', 'copy'] | dirty: True | editable: True
+posted: PJ-000001 | badge: Posted PJ-000001 | enabled: ['new', 'open', 'reverse', 'copy', 'refresh']
+unbalanced blocked: The journal is out of balance by 1.00. Debits must equal credits before posting.
+reversal: PJ-000002 posted
+trial balance rows: 2 | Total debit 500.00   Total credit 500.00   Balanced
+customer created via master screen
+warnings during run: ['The journal is out of balance by 1.00. Debits must equal credits before posting.']
+responsive: header columns 3 (wide) -> 3 (narrow)
+UI SMOKE TEST PASSED
+
+Test files:
+  tests/smoke_ui.py
+  tests/test_access_resolution.py
+  tests/test_auth_flow.py
+  tests/test_client_refs.py
+  tests/test_core.py
+  tests/test_corporate_hierarchy.py
+  tests/test_design.py
+  tests/test_known_gaps.py
+  tests/test_login_ui.py
+  tests/test_migration_safety.py
+  tests/test_session_expiry.py
+  tests/test_status_bar.py

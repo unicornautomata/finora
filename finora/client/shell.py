@@ -1,14 +1,19 @@
 """Main window: collapsible sidebar, fixed action toolbar, closable tabs."""
 from __future__ import annotations
-from PyQt6.QtCore import QSize, Qt
+from datetime import datetime
+
+from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QMainWindow, QTabBar, QTabWidget,
                              QToolBar, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import design
 from .design import icons
-from .components import Button, dialogs
+from .clock import format_clock
+from .components import Button, StatusMessage, dialogs
 from .design.brand import BrandHeader, app_icon
+from .api_client import SESSION_EXPIRED_MESSAGE
+from .login import ReauthDialog
 from .screens import DocumentScreen, MasterScreen, Screen, TrialBalanceScreen
 from .widgets import RefCache
 
@@ -28,10 +33,15 @@ GROUP_ICONS = {"Journals": "book", "Operations": "layers", "Finance": "bar-chart
 
 
 class Shell(QMainWindow):
+    session_lost = pyqtSignal()          # emitted (possibly from a worker thread) when the server rejects our token
+
     def __init__(self, client, meta, host_info: str | None = None, on_logout=None):
         super().__init__()
         self.client, self.meta, self.on_logout = client, meta, on_logout
         self.refs = RefCache(client, meta["entities"])
+        self._reauth_open = False
+        self.session_lost.connect(self._on_session_lost)
+        client.on_unauthorized = self.session_lost.emit
         self.setWindowTitle(design.PRODUCT_NAME); self.setWindowIcon(app_icon())
         self.setMinimumSize(900, 600); self.resize(1360, 860); self._narrow = False
 
@@ -89,8 +99,20 @@ class Shell(QMainWindow):
 
         design.bus.changed.connect(self._refresh_icons)
         self._refresh_icons()
-        self.statusBar().showMessage(host_info or f"{design.PRODUCT_NAME} · connected to {client.base_url}")
+        # status bar: operation messages on the left, weekday / date / time on the right
+        self.status_msg = StatusMessage(); self.statusBar().addWidget(self.status_msg, 1)
+        self.clock = QLabel(); self.clock.setObjectName("statusClock"); self.statusBar().addPermanentWidget(self.clock)
+        self._tick(); self._clock_timer = QTimer(self); self._clock_timer.timeout.connect(self._tick); self._clock_timer.start(1000)
+        self.set_status(host_info or f"{design.PRODUCT_NAME} · connected to {client.base_url}", "info")
         self.open_screen("doc:" + (meta["menu"][0]["items"][0]["key"].split(":")[1]))
+
+    # ---- status bar
+    def _tick(self):
+        self.clock.setText(format_clock(datetime.now()))
+
+    def set_status(self, text: str, kind: str = "info"):
+        """Show an operation message at the left of the status bar (stays until the next one)."""
+        self.status_msg.set_message(text, "danger" if kind == "error" else kind)
 
     # ---- responsive behaviour
     def resizeEvent(self, e):
@@ -196,11 +218,34 @@ class Shell(QMainWindow):
         s = self.tabs.currentWidget()
         if s: s.run(key)
 
-    def _message(self, text, is_error):
-        if is_error:
+    def _on_session_lost(self):
+        """Token rejected: ask for the password again in place, so open screens and unsaved edits survive."""
+        if self._reauth_open:
+            return
+        self._reauth_open = True
+        try:
+            ok = ReauthDialog(self.client, self).exec()
+        finally:
+            self._reauth_open = False
+        if ok:
+            self.client.session_expired = False
+            self.set_status("Signed in again. Please repeat your last action.", "info")
+            self.refs.invalidate()                         # lookups may have failed while signed out
+        else:
+            self.client.token = None
+            self.close()
+            if self.on_logout:
+                self.on_logout()
+
+    def _message(self, text, kind):
+        if kind == "error":
+            if text == SESSION_EXPIRED_MESSAGE or self.client.session_expired or self._reauth_open:
+                self.set_status("Your session expired. Sign in again, then repeat the action.", "warning")
+                return
+            self.set_status(text, "danger")
             dialogs.error(self, text)
         else:
-            self.statusBar().showMessage(text, 6000)
+            self.set_status(text, kind)
 
     def _logout(self):
         dirty = [self.tabs.widget(i) for i in range(self.tabs.count()) if self.tabs.widget(i).is_dirty()]

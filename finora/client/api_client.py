@@ -4,10 +4,13 @@ from __future__ import annotations
 import httpx
 
 
+SESSION_EXPIRED_MESSAGE = "Your session has expired."
+
+
 class ApiError(Exception):
-    def __init__(self, message: str, status: int = 0):
+    def __init__(self, message: str, status: int = 0, network: bool = False):
         super().__init__(message)
-        self.status = status
+        self.status, self.network = status, network
 
 
 class ApiClient:
@@ -15,6 +18,8 @@ class ApiClient:
         self.base_url = base_url.rstrip("/")
         self.token: str | None = None
         self.user: dict | None = None
+        self.on_unauthorized = None          # called (from any thread) when a signed-in request gets a 401
+        self.session_expired = False
         self._http = httpx.Client(base_url=self.base_url, timeout=15)
 
     def _req(self, method: str, path: str, **kw):
@@ -22,7 +27,12 @@ class ApiClient:
         try:
             r = self._http.request(method, path, headers=headers, **kw)
         except httpx.HTTPError as ex:
-            raise ApiError(f"Cannot reach server at {self.base_url}: {ex}") from ex
+            raise ApiError(f"Cannot reach server at {self.base_url}: {ex}", 0, network=True) from ex
+        if r.status_code == 401 and self.token and path != "/auth/login":
+            self.session_expired = True
+            if self.on_unauthorized:
+                self.on_unauthorized()
+            raise ApiError(SESSION_EXPIRED_MESSAGE, 401)      # fixed wording so the window can recognise it
         if r.status_code >= 400:
             try:
                 detail = r.json().get("detail", r.text)
@@ -33,14 +43,17 @@ class ApiClient:
             raise ApiError(str(detail), r.status_code)
         return r.json()
 
+    def health(self):
+        return self._req("GET", "/health", timeout=5)
+
     def login(self, username: str, password: str):
         out = self._req("POST", "/auth/login", json=dict(username=username, password=password))
-        self.token, self.user = out["token"], out["user"]
+        self.token, self.user, self.session_expired = out["token"], out["user"], False
         return out
 
     def logout(self):
         try:
-            self._req("POST", "/auth/logout")
+            self._req("POST", "/auth/logout", timeout=3)
         except ApiError:
             pass
         self.token = None
