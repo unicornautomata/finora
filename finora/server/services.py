@@ -35,9 +35,9 @@ def now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def audit(c, user, action, entity=None, entity_id=None, detail=None):
-    c.execute("INSERT INTO audit_log(ts,username,action,entity,entity_id,detail) VALUES (?,?,?,?,?,?)",
-              (now(), user, action, entity, None if entity_id is None else str(entity_id), detail))
+def audit(c, user, action, entity=None, entity_id=None, detail=None, cocd=None):
+    c.execute("INSERT INTO audit_log(ts,username,action,entity,entity_id,detail,cocd) VALUES (?,?,?,?,?,?,?)",
+              (now(), user, action, entity, None if entity_id is None else str(entity_id), detail, cocd))
 
 
 # ---------------------------------------------------------------- money / quantities
@@ -369,7 +369,7 @@ def journal_create(c, p: Principal, data: dict) -> dict:
                      data.get("department"), data.get("description"), p.username))
     jid = cur.lastrowid
     _validate_and_store_lines(c, jid, data["cocd"], data.get("lines", []))
-    audit(c, p.username, "create", "journal", jid)
+    audit(c, p.username, "create", "journal", jid, cocd=data["cocd"])
     return journal_get(c, jid)
 
 
@@ -395,14 +395,14 @@ def journal_update(c, p: Principal, jid: int, data: dict) -> dict:
               (merged["cocd"], dd, pd_, merged["reference"], merged["department"], merged["description"], jid))
     if "lines" in data:
         _validate_and_store_lines(c, jid, merged["cocd"], data["lines"])
-    audit(c, p.username, "update", "journal", jid)
+    audit(c, p.username, "update", "journal", jid, cocd=merged["cocd"])
     return journal_get(c, jid)
 
 
 def journal_delete(c, p: Principal, jid: int, version=None):
-    _draft_for_update(c, jid, version)
+    h = _draft_for_update(c, jid, version)
     c.execute("DELETE FROM journal_headers WHERE id=?", (jid,))
-    audit(c, p.username, "delete", "journal", jid)
+    audit(c, p.username, "delete", "journal", jid, cocd=h["cocd"])
 
 
 def _next_number(c, cocd, doctype) -> str:
@@ -426,7 +426,7 @@ def _post_in_tx(c, p: Principal, jid: int, expected_version=None) -> dict:
     no = _next_number(c, h["cocd"], h["doctype"])
     c.execute("""UPDATE journal_headers SET status='posted', doc_no=?, posted_by=?, posted_at=?,
                  version=version+1 WHERE id=?""", (no, p.username, now(), jid))
-    audit(c, p.username, "post", "journal", jid, no)
+    audit(c, p.username, "post", "journal", jid, no, cocd=h["cocd"])
     return journal_get(c, jid)
 
 
@@ -457,7 +457,7 @@ def journal_reverse(c, p: Principal, jid: int, posting_date: str | None = None) 
               (rid, jid))
     _post_in_tx(c, p, rid)
     c.execute("UPDATE journal_headers SET status='reversed', reversed_by_id=? WHERE id=?", (rid, jid))
-    audit(c, p.username, "reverse", "journal", jid, str(rid))
+    audit(c, p.username, "reverse", "journal", jid, str(rid), cocd=h["cocd"])
     return journal_get(c, rid)
 
 

@@ -17,8 +17,9 @@ class _Dispatcher(QObject):
         fn()
 
 
-def run_async(fn, on_ok=None, on_fail=None):
-    """Call run_async from the UI thread. fn runs in a worker; on_ok/on_fail run in the UI thread."""
+def run_async(fn, on_ok=None, on_fail=None, raw_errors: bool = False):
+    """Call run_async from the UI thread. fn runs in a worker; on_ok/on_fail run in the UI thread.
+    on_fail receives the error message, or the exception object itself when raw_errors=True."""
     global _dispatcher
     if _dispatcher is None:
         _dispatcher = _Dispatcher()
@@ -29,8 +30,8 @@ def run_async(fn, on_ok=None, on_fail=None):
             try:
                 result = fn()
             except Exception as ex:  # shown to the user, never swallowed
-                msg = str(ex)
-                disp.call.emit(lambda: on_fail(msg) if on_fail else None)
+                err = ex if raw_errors else str(ex)
+                disp.call.emit(lambda: on_fail(err) if on_fail else None)
             else:
                 disp.call.emit(lambda: on_ok(result) if on_ok else None)
 
