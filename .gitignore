@@ -1,6 +1,16 @@
+# Python cache
 __pycache__/
-*.pyc
+*.py[cod]
+
+# SQLite databases and backups
 *.db
 *.db-wal
 *.db-shm
 *.db-journal
+*.db.bak*
+*.sqlite
+*.sqlite3
+
+# Password recovery utilities
+reset_admin_password.py
+finora/reset_admin_password.py
